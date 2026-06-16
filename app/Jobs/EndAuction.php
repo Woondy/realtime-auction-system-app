@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Events\AuctionEnded;
 use App\Models\Bid;
 use App\Models\Product;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -27,6 +28,6 @@ class EndAuction implements ShouldQueue
             ->orderByDesc('amount')
             ->first();
 
-        // Broadcasting will be added in future
+        AuctionEnded::dispatch($this->product, $winner);
     }
 }

@@ -1,4 +1,4 @@
-import { Head, useForm, usePage } from '@inertiajs/react';
+import { Head, router, useForm, usePage } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 
 interface Bid {
@@ -93,6 +93,33 @@ return;
     };
 
     const isUrgent = timeLeft !== null && timeLeft <= 10;
+
+    // Real-time WebSocket listeners
+    useEffect(() => {
+        if (typeof window.Echo === 'undefined') {
+            return;
+        }
+
+        const channel = window.Echo.channel(`auction.${product.id}`);
+
+        channel.listen('.BidPlaced', () => {
+            router.reload({ only: ['product', 'highestBid'], preserveState: true, preserveScroll: true });
+        });
+
+        channel.listen('.AuctionStarted', () => {
+            router.reload({ preserveScroll: true });
+        });
+
+        channel.listen('.AuctionEnded', () => {
+            router.reload({ preserveScroll: true });
+        });
+
+        return () => {
+            channel.stopListening('.BidPlaced');
+            channel.stopListening('.AuctionStarted');
+            channel.stopListening('.AuctionEnded');
+        };
+    }, [product.id]);
 
     return (
         <>

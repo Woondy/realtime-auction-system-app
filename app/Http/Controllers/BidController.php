@@ -2,12 +2,14 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\AuctionStarted;
+use App\Events\BidPlaced;
 use App\Http\Requests\StoreBidRequest;
 use App\Jobs\EndAuction;
 use App\Models\Bid;
 use App\Models\Product;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class BidController extends Controller
@@ -19,6 +21,8 @@ class BidController extends Controller
                 'amount' => 'This auction has already ended.',
             ]);
         }
+
+        $wasPending = $product->status === 'pending';
 
         $bid = DB::transaction(function () use ($request, $product) {
             $maxBid = Bid::where('product_id', $product->id)
@@ -49,6 +53,13 @@ class BidController extends Controller
 
             return $bid;
         });
+
+        // Broadcast events after transaction commits
+        if ($wasPending) {
+            AuctionStarted::dispatch($product);
+        }
+
+        BidPlaced::dispatch($bid);
 
         return back();
     }
