@@ -1,4 +1,5 @@
 import { Head, useForm, usePage } from '@inertiajs/react';
+import { useEffect, useState } from 'react';
 
 interface Bid {
     id: number;
@@ -45,12 +46,53 @@ export default function Show({ product, highestBid }: Props) {
 
     const isEnded = product.status === 'ended';
     const isActive = product.status === 'active';
+    const isPending = product.status === 'pending';
 
     const formatPrice = (value: number | string) =>
         '¥' + Number(value).toLocaleString('en-US', { minimumFractionDigits: 2 });
 
     const formatTime = (dateString: string) =>
         new Date(dateString).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    // Countdown timer — initial value derived from props, updated by interval
+    const calcRemaining = (endsAt: string): number => {
+        return Math.max(0, Math.floor((new Date(endsAt).getTime() - Date.now()) / 1000));
+    };
+
+    const [timeLeft, setTimeLeft] = useState<number | null>(() => {
+        if (!product.ends_at || isEnded) {
+return null;
+}
+
+        return calcRemaining(product.ends_at);
+    });
+
+    useEffect(() => {
+        if (!product.ends_at || isEnded) {
+return;
+}
+
+        const interval = setInterval(() => {
+            const remaining = calcRemaining(product.ends_at!);
+            setTimeLeft(remaining);
+
+            if (remaining <= 0) {
+                clearInterval(interval);
+                window.location.reload();
+            }
+        }, 200);
+
+        return () => clearInterval(interval);
+    }, [product.ends_at, isEnded]);
+
+    const formatCountdown = (seconds: number): string => {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+
+        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    };
+
+    const isUrgent = timeLeft !== null && timeLeft <= 10;
 
     return (
         <>
@@ -71,6 +113,29 @@ export default function Show({ product, highestBid }: Props) {
                         )}
                     </div>
 
+                    {/* Winner Banner */}
+                    {isEnded && highestBid && (
+                        <div className="mb-6 rounded-xl border-2 border-yellow-400 bg-gradient-to-r from-yellow-50 to-orange-50 p-6 text-center shadow-lg dark:border-yellow-600 dark:from-yellow-900/20 dark:to-orange-900/20">
+                            <div className="mb-1 text-sm font-medium text-yellow-700 dark:text-yellow-400">
+                                Auction Ended &mdash; Winner
+                            </div>
+                            <div className="text-2xl font-bold text-[#1b1b18] dark:text-[#EDEDEC]">
+                                {highestBid.bidder_name}
+                            </div>
+                            <div className="mt-1 text-3xl font-bold text-yellow-700 dark:text-yellow-400">
+                                {formatPrice(highestBid.amount)}
+                            </div>
+                        </div>
+                    )}
+
+                    {isEnded && !highestBid && (
+                        <div className="mb-6 rounded-xl border border-[#e3e3e0] bg-white p-6 text-center shadow-sm dark:border-[#3E3E3A] dark:bg-[#161615]">
+                            <p className="text-[#706f6c] dark:text-[#A1A09A]">
+                                Auction ended with no bids.
+                            </p>
+                        </div>
+                    )}
+
                     {/* Product Info */}
                     <div className="space-y-6">
                         <div className="flex items-center gap-3">
@@ -83,6 +148,17 @@ export default function Show({ product, highestBid }: Props) {
                                 {product.status === 'active' && 'Active'}
                                 {product.status === 'ended' && 'Ended'}
                             </span>
+
+                            {/* Countdown Timer */}
+                            {isActive && timeLeft !== null && (
+                                <span className={`rounded-full px-3 py-1 text-xs font-mono font-medium
+                                    ${isUrgent
+                                        ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 animate-pulse'
+                                        : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'}
+                                `}>
+                                    {formatCountdown(timeLeft)}
+                                </span>
+                            )}
                         </div>
 
                         <h1 className="text-3xl font-bold tracking-tight text-[#1b1b18] sm:text-4xl dark:text-[#EDEDEC]">
@@ -107,6 +183,15 @@ export default function Show({ product, highestBid }: Props) {
                             </div>
                         </div>
 
+                        {/* Waiting banner for pending state */}
+                        {isPending && (
+                            <div className="rounded-xl border border-dashed border-[#e3e3e0] bg-white p-6 text-center shadow-sm dark:border-[#3E3E3A] dark:bg-[#161615]">
+                                <p className="text-[#706f6c] dark:text-[#A1A09A]">
+                                    Waiting for the first bidder to start the auction.
+                                </p>
+                            </div>
+                        )}
+
                         {/* Bid Form */}
                         {!isEnded && (
                             <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-[#e3e3e0] bg-white p-6 shadow-sm dark:border-[#3E3E3A] dark:bg-[#161615]">
@@ -116,7 +201,7 @@ export default function Show({ product, highestBid }: Props) {
 
                                 <div>
                                     <label htmlFor="bidder_name" className="mb-1 block text-sm font-medium text-[#706f6c] dark:text-[#A1A09A]">
-                                         Your Name
+                                        Your Name
                                     </label>
                                     <input
                                         id="bidder_name"
@@ -190,9 +275,11 @@ export default function Show({ product, highestBid }: Props) {
                             {product.bids.length === 0 ? (
                                 <div className="px-6 py-12 text-center">
                                     <p className="text-[#706f6c] dark:text-[#A1A09A]">No bids yet</p>
-                                    <p className="mt-1 text-sm text-[#b0b0ab] dark:text-[#5E5E5A]">
-                                        Be the first to bid and start the auction!
-                                    </p>
+                                    {!isEnded && (
+                                        <p className="mt-1 text-sm text-[#b0b0ab] dark:text-[#5E5E5A]">
+                                            Be the first to bid and start the auction!
+                                        </p>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="divide-y divide-[#e3e3e0] dark:divide-[#3E3E3A]">
@@ -200,6 +287,7 @@ export default function Show({ product, highestBid }: Props) {
                                         .sort((a, b) => b.id - a.id)
                                         .map((bid) => {
                                             const isTopBid = highestBid && bid.id === highestBid.id;
+
                                             return (
                                                 <div key={bid.id} className={`flex items-center justify-between px-6 py-3
                                                     ${isTopBid ? 'bg-green-50 dark:bg-green-900/10' : ''}`}

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreBidRequest;
+use App\Jobs\EndAuction;
 use App\Models\Bid;
 use App\Models\Product;
 use Illuminate\Support\Facades\DB;
@@ -42,6 +43,8 @@ class BidController extends Controller
                     'status' => 'active',
                     'ends_at' => now()->addSeconds(60),
                 ]);
+
+                EndAuction::dispatch($product)->delay(60);
             }
 
             return $bid;
