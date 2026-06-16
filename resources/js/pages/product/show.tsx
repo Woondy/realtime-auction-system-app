@@ -27,6 +27,8 @@ interface Props {
 
 export default function Show({ product, highestBid }: Props) {
     const { errors } = usePage().props;
+    const flash = (usePage().props as Record<string, unknown>).flash as { success?: string } | undefined;
+    const [showToast, setShowToast] = useState(false);
 
     const { data, setData, post, processing, reset } = useForm({
         bidder_name: '',
@@ -36,9 +38,22 @@ export default function Show({ product, highestBid }: Props) {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         post(`/products/${product.id}/bids`, {
-            onSuccess: () => reset(),
+            onSuccess: () => {
+                reset();
+
+                // Remember bidder name for own-bid highlighting
+                if (data.bidder_name) {
+                    localStorage.setItem('lastBidderName', data.bidder_name);
+                }
+
+                setShowToast(true);
+                setTimeout(() => setShowToast(false), 4000);
+            },
         });
     };
+
+    // Track own bids: highlight bids made by the current user's last-used name
+    const ownBidderName = typeof window !== 'undefined' ? localStorage.getItem('lastBidderName') : null;
 
     const currentPrice = highestBid
         ? Number(highestBid.amount)
@@ -126,7 +141,18 @@ return;
             <Head title={product.name} />
 
             <div className="min-h-screen bg-[#FDFDFC] dark:bg-[#0a0a0a]">
-                <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6 lg:px-8">
+                <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
+                    {/* Toast Notification */}
+                    {showToast && (
+                        <div className="animate-[slideDown_0.3s_ease-out] fixed left-1/2 top-4 z-50 -translate-x-1/2">
+                            <div className="flex items-center gap-2 rounded-lg bg-green-50 px-4 py-3 text-sm font-medium text-green-700 shadow-lg ring-1 ring-green-200 dark:bg-green-900/40 dark:text-green-300 dark:ring-green-800">
+                                <svg className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                {flash?.success ?? 'Bid placed successfully!'}
+                            </div>
+                        </div>
+                    )}
                     {/* Product Image Placeholder */}
                     <div className="mb-8 overflow-hidden rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 shadow-lg dark:from-gray-800 dark:to-gray-700">
                         {product.image ? (
@@ -277,11 +303,17 @@ return;
                                 <button
                                     type="submit"
                                     disabled={processing}
-                                    className="w-full rounded-lg bg-[#1b1b18] px-4 py-3 text-sm font-medium text-white transition-all
+                                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#1b1b18] px-4 py-3 text-sm font-medium text-white transition-all
                                         hover:bg-black active:scale-[0.98]
                                         disabled:cursor-not-allowed disabled:opacity-50
                                         dark:bg-[#eeeeec] dark:text-[#1C1C1A] dark:hover:bg-white"
                                 >
+                                    {processing && (
+                                        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                        </svg>
+                                    )}
                                     {processing ? 'Submitting...' : 'Bid'}
                                 </button>
                             </form>
@@ -314,18 +346,27 @@ return;
                                         .sort((a, b) => b.id - a.id)
                                         .map((bid) => {
                                             const isTopBid = highestBid && bid.id === highestBid.id;
+                                            const isOwnBid = ownBidderName && bid.bidder_name === ownBidderName;
 
                                             return (
-                                                <div key={bid.id} className={`flex items-center justify-between px-6 py-3
-                                                    ${isTopBid ? 'bg-green-50 dark:bg-green-900/10' : ''}`}
+                                                <div key={bid.id} className={`flex items-center justify-between px-4 py-3 sm:px-6 transition-all
+                                                    ${isTopBid ? 'bg-green-50 dark:bg-green-900/10' : ''}
+                                                    ${isOwnBid ? 'ring-1 ring-inset ring-blue-200 dark:ring-blue-800' : ''}`}
                                                 >
                                                     <div className="flex items-center gap-3">
-                                                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#e3e3e0] text-sm font-medium text-[#706f6c] dark:bg-[#3E3E3A] dark:text-[#A1A09A]">
+                                                        <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium
+                                                            ${isOwnBid
+                                                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                                                                : 'bg-[#e3e3e0] text-[#706f6c] dark:bg-[#3E3E3A] dark:text-[#A1A09A]'}`}
+                                                        >
                                                             {bid.bidder_name.charAt(0).toUpperCase()}
                                                         </div>
                                                         <div>
                                                             <p className="text-sm font-medium text-[#1b1b18] dark:text-[#EDEDEC]">
                                                                 {bid.bidder_name}
+                                                                {isOwnBid && (
+                                                                    <span className="ml-1 text-xs text-blue-600 dark:text-blue-400">(you)</span>
+                                                                )}
                                                             </p>
                                                             <p className="text-xs text-[#b0b0ab] dark:text-[#5E5E5A]">
                                                                 {formatTime(bid.created_at)}

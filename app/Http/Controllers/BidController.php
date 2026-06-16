@@ -61,6 +61,6 @@ class BidController extends Controller
 
         BidPlaced::dispatch($bid);
 
-        return back();
+        return back()->with('success', 'Bid placed successfully! ¥' . number_format((float) $bid->amount, 2));
     }
 }
