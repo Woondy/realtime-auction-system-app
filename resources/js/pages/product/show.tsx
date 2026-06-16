@@ -30,30 +30,34 @@ export default function Show({ product, highestBid }: Props) {
     const flash = (usePage().props as Record<string, unknown>).flash as { success?: string } | undefined;
     const [showToast, setShowToast] = useState(false);
 
+    const ownBidderName = typeof window !== 'undefined' ? localStorage.getItem('lastBidderName') : null;
+
     const { data, setData, post, processing, reset } = useForm({
-        bidder_name: '',
-        amount: '',
+        bidder_name: ownBidderName ?? '',
+        amount: (highestBid ? Number(highestBid.amount) + 100 : Number(product.starting_price) + 100).toString(),
     });
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         post(`/products/${product.id}/bids`, {
             onSuccess: () => {
-                reset();
-
-                // Remember bidder name for own-bid highlighting
                 if (data.bidder_name) {
                     localStorage.setItem('lastBidderName', data.bidder_name);
                 }
 
+                // Pre-fill amount for next bid
+                const nextAmount = Number(data.amount) + 100;
+                reset();
+                setData('amount', nextAmount.toString());
                 setShowToast(true);
-                setTimeout(() => setShowToast(false), 4000);
+                setTimeout(() => setShowToast(false), 3000);
             },
         });
     };
 
-    // Track own bids: highlight bids made by the current user's last-used name
-    const ownBidderName = typeof window !== 'undefined' ? localStorage.getItem('lastBidderName') : null;
+    const addHundred = () => {
+        setData('amount', (Number(data.amount || 0) + 100).toString());
+    };
 
     const currentPrice = highestBid
         ? Number(highestBid.amount)
@@ -62,17 +66,14 @@ export default function Show({ product, highestBid }: Props) {
     const isEnded = product.status === 'ended';
     const isActive = product.status === 'active';
     const isPending = product.status === 'pending';
+    const isOwnTopBid = highestBid && ownBidderName && highestBid.bidder_name === ownBidderName;
 
     const formatPrice = (value: number | string) =>
-        '¥' + Number(value).toLocaleString('en-US', { minimumFractionDigits: 2 });
+        '$' + Number(value).toLocaleString('en-US');
 
-    const formatTime = (dateString: string) =>
-        new Date(dateString).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-
-    // Countdown timer — initial value derived from props, updated by interval
-    const calcRemaining = (endsAt: string): number => {
-        return Math.max(0, Math.floor((new Date(endsAt).getTime() - Date.now()) / 1000));
-    };
+    // Countdown timer
+    const calcRemaining = (endsAt: string): number =>
+        Math.max(0, Math.floor((new Date(endsAt).getTime() - Date.now()) / 1000));
 
     const [timeLeft, setTimeLeft] = useState<number | null>(() => {
         if (!product.ends_at || isEnded) {
@@ -112,19 +113,16 @@ return;
     // Real-time WebSocket listeners
     useEffect(() => {
         if (typeof window.Echo === 'undefined') {
-            return;
-        }
+return;
+}
 
         const channel = window.Echo.channel(`auction.${product.id}`);
-
         channel.listen('.BidPlaced', () => {
             router.reload({ only: ['product', 'highestBid'], preserveState: true, preserveScroll: true });
         });
-
         channel.listen('.AuctionStarted', () => {
             router.reload({ preserveScroll: true });
         });
-
         channel.listen('.AuctionEnded', () => {
             router.reload({ preserveScroll: true });
         });
@@ -139,174 +137,89 @@ return;
     return (
         <>
             <Head title={product.name} />
-
-            <div className="min-h-screen bg-[#FDFDFC] dark:bg-[#0a0a0a]">
-                <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
-                    {/* Toast Notification */}
-                    {showToast && (
-                        <div className="animate-[slideDown_0.3s_ease-out] fixed left-1/2 top-4 z-50 -translate-x-1/2">
-                            <div className="flex items-center gap-2 rounded-lg bg-green-50 px-4 py-3 text-sm font-medium text-green-700 shadow-lg ring-1 ring-green-200 dark:bg-green-900/40 dark:text-green-300 dark:ring-green-800">
-                                <svg className="h-5 w-5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                                {flash?.success ?? 'Bid placed successfully!'}
-                            </div>
-                        </div>
-                    )}
-                    {/* Product Image Placeholder */}
-                    <div className="mb-8 overflow-hidden rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 shadow-lg dark:from-gray-800 dark:to-gray-700">
+            <div className="flex min-h-screen items-center justify-center bg-gray-100 p-4">
+                {/* Card */}
+                <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-xl">
+                    {/* Header Image */}
+                    <div className="relative h-56 bg-gradient-to-br from-orange-100 via-pink-100 to-rose-200">
                         {product.image ? (
-                            <img src={product.image} alt={product.name} className="h-64 w-full object-cover" />
+                            <img src={product.image} alt="" className="h-full w-full object-cover" />
                         ) : (
-                            <div className="flex h-64 w-full items-center justify-center text-gray-400 dark:text-gray-500">
-                                <svg className="h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            <div className="flex h-full items-end justify-end p-6">
+                                {/* Watch illustration placeholder */}
+                                <svg className="h-40 w-40 text-rose-300/60" viewBox="0 0 100 100" fill="currentColor">
+                                    <circle cx="50" cy="50" r="35" stroke="currentColor" strokeWidth="8" fill="none" />
+                                    <circle cx="50" cy="50" r="28" fill="white" fillOpacity="0.6" />
+                                    <line x1="50" y1="22" x2="50" y2="28" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+                                    <line x1="50" y1="72" x2="50" y2="78" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
                                 </svg>
                             </div>
                         )}
                     </div>
 
-                    {/* Winner Banner */}
-                    {isEnded && highestBid && (
-                        <div className="mb-6 rounded-xl border-2 border-yellow-400 bg-gradient-to-r from-yellow-50 to-orange-50 p-6 text-center shadow-lg dark:border-yellow-600 dark:from-yellow-900/20 dark:to-orange-900/20">
-                            <div className="mb-1 text-sm font-medium text-yellow-700 dark:text-yellow-400">
-                                Auction Ended &mdash; Winner
-                            </div>
-                            <div className="text-2xl font-bold text-[#1b1b18] dark:text-[#EDEDEC]">
-                                {highestBid.bidder_name}
-                            </div>
-                            <div className="mt-1 text-3xl font-bold text-yellow-700 dark:text-yellow-400">
-                                {formatPrice(highestBid.amount)}
+                    {/* Toast */}
+                    {showToast && (
+                        <div className="animate-[slideDown_0.3s_ease-out] fixed left-1/2 top-4 z-50 -translate-x-1/2">
+                            <div className="flex items-center gap-2 rounded-full bg-green-500 px-5 py-2.5 text-sm font-medium text-white shadow-lg">
+                                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                                </svg>
+                                {flash?.success ?? 'Bid Placed!'}
                             </div>
                         </div>
                     )}
 
-                    {isEnded && !highestBid && (
-                        <div className="mb-6 rounded-xl border border-[#e3e3e0] bg-white p-6 text-center shadow-sm dark:border-[#3E3E3A] dark:bg-[#161615]">
-                            <p className="text-[#706f6c] dark:text-[#A1A09A]">
-                                Auction ended with no bids.
-                            </p>
-                        </div>
-                    )}
-
-                    {/* Product Info */}
-                    <div className="space-y-6">
-                        <div className="flex items-center gap-3">
-                            <span className={`inline-block rounded-full px-3 py-1 text-xs font-medium capitalize
-                                ${product.status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : ''}
-                                ${product.status === 'pending' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300' : ''}
-                                ${product.status === 'ended' ? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' : ''}
-                            `}>
-                                {product.status === 'pending' && 'Pending'}
-                                {product.status === 'active' && 'Active'}
-                                {product.status === 'ended' && 'Ended'}
-                            </span>
-
-                            {/* Countdown Timer */}
-                            {isActive && timeLeft !== null && (
-                                <span className={`rounded-full px-3 py-1 text-xs font-mono font-medium
-                                    ${isUrgent
-                                        ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 animate-pulse'
-                                        : 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'}
-                                `}>
-                                    {formatCountdown(timeLeft)}
-                                </span>
-                            )}
-                        </div>
-
-                        <h1 className="text-3xl font-bold tracking-tight text-[#1b1b18] sm:text-4xl dark:text-[#EDEDEC]">
-                            {product.name}
-                        </h1>
-
-                        {product.description && (
-                            <p className="text-lg leading-relaxed text-[#706f6c] dark:text-[#A1A09A]">
-                                {product.description}
-                            </p>
-                        )}
-
-                        {/* Price Card */}
-                        <div className="rounded-xl border border-[#e3e3e0] bg-white p-6 shadow-sm dark:border-[#3E3E3A] dark:bg-[#161615]">
-                            <div className="flex items-center justify-between">
-                                <span className="text-sm font-medium text-[#706f6c] dark:text-[#A1A09A]">
-                                    {highestBid ? 'Highest Bid' : 'Starting Price'}
-                                </span>
-                                <span className="text-3xl font-bold text-[#1b1b18] dark:text-[#EDEDEC]">
-                                    {formatPrice(currentPrice)}
-                                </span>
+                    {/* ===== WAITING STATE ===== */}
+                    {isPending && (
+                        <div className="p-6">
+                            {/* Timer - static 01:00 */}
+                            <div className="mb-4 flex items-center justify-center gap-2 text-2xl font-mono font-bold text-gray-300">
+                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <circle cx="12" cy="12" r="10" />
+                                    <path d="M12 6v6l4 2" />
+                                </svg>
+                                01:00
                             </div>
-                        </div>
 
-                        {/* Waiting banner for pending state */}
-                        {isPending && (
-                            <div className="rounded-xl border border-dashed border-[#e3e3e0] bg-white p-6 text-center shadow-sm dark:border-[#3E3E3A] dark:bg-[#161615]">
-                                <p className="text-[#706f6c] dark:text-[#A1A09A]">
-                                    Waiting for the first bidder to start the auction.
+                            {/* Status */}
+                            <div className="mb-6 flex flex-col items-center gap-3 py-4">
+                                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
+                                    <svg className="h-6 w-6 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                                        <path strokeLinecap="round" d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.749.749 0 011.06 0z" />
+                                    </svg>
+                                </div>
+                                <p className="text-base font-semibold text-gray-800">
+                                    Please <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-sm">Bid</span> to Start
                                 </p>
                             </div>
-                        )}
 
-                        {/* Bid Form */}
-                        {!isEnded && (
-                            <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-[#e3e3e0] bg-white p-6 shadow-sm dark:border-[#3E3E3A] dark:bg-[#161615]">
-                                <h3 className="font-semibold text-[#1b1b18] dark:text-[#EDEDEC]">
-                                    {isActive ? 'Place Your Bid' : 'Be the First Bidder'}
-                                </h3>
-
-                                <div>
-                                    <label htmlFor="bidder_name" className="mb-1 block text-sm font-medium text-[#706f6c] dark:text-[#A1A09A]">
-                                        Your Name
-                                    </label>
-                                    <input
-                                        id="bidder_name"
-                                        type="text"
-                                        value={data.bidder_name}
-                                        onChange={(e) => setData('bidder_name', e.target.value)}
-                                        className={`w-full rounded-lg border px-4 py-2.5 text-sm transition-colors
-                                            bg-white dark:bg-[#1b1b18] text-[#1b1b18] dark:text-[#EDEDEC]
-                                            ${errors.bidder_name
-                                                ? 'border-red-400 dark:border-red-500 focus:border-red-500 focus:ring-red-500'
-                                                : 'border-[#e3e3e0] dark:border-[#3E3E3A] focus:border-[#1b1b18] dark:focus:border-[#EDEDEC]'
-                                            }
-                                            focus:outline-none focus:ring-1`}
-                                        placeholder="Enter your name"
-                                    />
-                                    {errors.bidder_name && (
-                                        <p className="mt-1 text-sm text-red-500">{errors.bidder_name}</p>
-                                    )}
-                                </div>
-
-                                <div>
-                                    <label htmlFor="amount" className="mb-1 block text-sm font-medium text-[#706f6c] dark:text-[#A1A09A]">
-                                        Bid Amount (min ¥{(currentPrice + 0.01).toLocaleString('en-US', { minimumFractionDigits: 2 })})
-                                    </label>
-                                    <input
-                                        id="amount"
-                                        type="number"
-                                        step="0.01"
-                                        min={currentPrice + 0.01}
-                                        value={data.amount}
-                                        onChange={(e) => setData('amount', e.target.value)}
-                                        className={`w-full rounded-lg border px-4 py-2.5 text-sm transition-colors
-                                            bg-white dark:bg-[#1b1b18] text-[#1b1b18] dark:text-[#EDEDEC]
-                                            ${errors.amount
-                                                ? 'border-red-400 dark:border-red-500 focus:border-red-500 focus:ring-red-500'
-                                                : 'border-[#e3e3e0] dark:border-[#3E3E3A] focus:border-[#1b1b18] dark:focus:border-[#EDEDEC]'
-                                            }
-                                            focus:outline-none focus:ring-1`}
-                                        placeholder="Enter bid amount"
-                                    />
-                                    {errors.amount && (
-                                        <p className="mt-1 text-sm text-red-500">{errors.amount}</p>
-                                    )}
-                                </div>
-
+                            {/* Action Bar */}
+                            <form onSubmit={handleSubmit} className="flex items-center gap-2 rounded-xl bg-gray-50 p-3">
+                                <input
+                                    type="number"
+                                    value={data.amount}
+                                    onChange={(e) => setData('amount', e.target.value)}
+                                    placeholder="Amount"
+                                    className="w-24 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium focus:border-rose-300 focus:outline-none focus:ring-1 focus:ring-rose-300"
+                                />
+                                <input
+                                    type="text"
+                                    value={data.bidder_name}
+                                    onChange={(e) => setData('bidder_name', e.target.value)}
+                                    placeholder="Name"
+                                    className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-rose-300 focus:outline-none focus:ring-1 focus:ring-rose-300"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={addHundred}
+                                    className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100"
+                                >
+                                    +100
+                                </button>
                                 <button
                                     type="submit"
                                     disabled={processing}
-                                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#1b1b18] px-4 py-3 text-sm font-medium text-white transition-all
-                                        hover:bg-black active:scale-[0.98]
-                                        disabled:cursor-not-allowed disabled:opacity-50
-                                        dark:bg-[#eeeeec] dark:text-[#1C1C1A] dark:hover:bg-white"
+                                    className="flex items-center gap-1.5 rounded-lg bg-rose-500 px-5 py-2 text-sm font-semibold text-white transition-all hover:bg-rose-600 active:scale-95 disabled:opacity-50"
                                 >
                                     {processing && (
                                         <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -314,77 +227,148 @@ return;
                                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                                         </svg>
                                     )}
-                                    {processing ? 'Submitting...' : 'Bid'}
+                                    Bid
                                 </button>
                             </form>
-                        )}
+                            {errors.amount && <p className="mt-2 text-center text-xs text-red-500">{errors.amount}</p>}
+                            {errors.bidder_name && <p className="mt-2 text-center text-xs text-red-500">{errors.bidder_name}</p>}
+                        </div>
+                    )}
 
-                        {isEnded && (
-                            <div className="rounded-xl border border-[#e3e3e0] bg-white p-6 text-center shadow-sm dark:border-[#3E3E3A] dark:bg-[#161615]">
-                                <p className="text-[#706f6c] dark:text-[#A1A09A]">This auction has ended.</p>
+                    {/* ===== ACTIVE STATE ===== */}
+                    {isActive && (
+                        <div className="p-6">
+                            {/* Timer */}
+                            <div className={`mb-4 flex items-center justify-center gap-2 text-2xl font-mono font-bold transition-colors
+                                ${isUrgent ? 'text-red-500' : 'text-gray-700'}`}
+                            >
+                                <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <circle cx="12" cy="12" r="10" />
+                                    <path d="M12 6v6l4 2" />
+                                </svg>
+                                {timeLeft !== null ? formatCountdown(timeLeft) : '00:00'}
                             </div>
-                        )}
 
-                        {/* Bid List */}
-                        <div className="rounded-xl border border-[#e3e3e0] bg-white shadow-sm dark:border-[#3E3E3A] dark:bg-[#161615]">
-                            <div className="border-b border-[#e3e3e0] px-6 py-4 dark:border-[#3E3E3A]">
-                                <h3 className="font-semibold text-[#1b1b18] dark:text-[#EDEDEC]">Bid History</h3>
+                            {/* Status */}
+                            <div className="mb-6 flex flex-col items-center gap-2 py-4">
+                                <img src="https://api.dicebear.com/7.x/initials/svg?seed=GU&backgroundColor=rose" className="h-10 w-10 rounded-full" alt="" />
+                                <p className="text-lg font-semibold text-gray-800">
+                                    {formatPrice(currentPrice)}
+                                </p>
+                                <p className="text-sm text-gray-500">
+                                    {isOwnTopBid ? 'Current Bid by You' : `Current Bid by ${highestBid?.bidder_name ?? 'N/A'}`}
+                                </p>
                             </div>
 
-                            {product.bids.length === 0 ? (
-                                <div className="px-6 py-12 text-center">
-                                    <p className="text-[#706f6c] dark:text-[#A1A09A]">No bids yet</p>
-                                    {!isEnded && (
-                                        <p className="mt-1 text-sm text-[#b0b0ab] dark:text-[#5E5E5A]">
-                                            Be the first to bid and start the auction!
-                                        </p>
+                            {/* Action Bar */}
+                            <form onSubmit={handleSubmit} className="flex items-center gap-2 rounded-xl bg-gray-50 p-3">
+                                <input
+                                    type="number"
+                                    value={data.amount}
+                                    onChange={(e) => setData('amount', e.target.value)}
+                                    placeholder="Amount"
+                                    className="w-24 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium focus:border-rose-300 focus:outline-none focus:ring-1 focus:ring-rose-300"
+                                />
+                                <input
+                                    type="text"
+                                    value={data.bidder_name}
+                                    onChange={(e) => setData('bidder_name', e.target.value)}
+                                    placeholder="Name"
+                                    className="flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-rose-300 focus:outline-none focus:ring-1 focus:ring-rose-300"
+                                />
+                                <button
+                                    type="button"
+                                    onClick={addHundred}
+                                    className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100"
+                                >
+                                    +100
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={processing}
+                                    className="flex items-center gap-1.5 rounded-lg bg-rose-500 px-5 py-2 text-sm font-semibold text-white transition-all hover:bg-rose-600 active:scale-95 disabled:opacity-50"
+                                >
+                                    {processing && (
+                                        <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                        </svg>
                                     )}
+                                    Bid
+                                </button>
+                            </form>
+                            {errors.amount && <p className="mt-2 text-center text-xs text-red-500">{errors.amount}</p>}
+                            {errors.bidder_name && <p className="mt-2 text-center text-xs text-red-500">{errors.bidder_name}</p>}
+                        </div>
+                    )}
+
+                    {/* ===== ENDED STATE ===== */}
+                    {isEnded && (
+                        <div className="p-6">
+                            {highestBid && isOwnTopBid ? (
+                                /* You won */
+                                <div className="mb-4 rounded-xl bg-green-500 p-6 text-center text-white">
+                                    <svg className="mx-auto mb-2 h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    <p className="text-lg font-bold">You are the winner!</p>
+                                    <p className="mt-1 text-3xl font-extrabold">{formatPrice(highestBid.amount)}</p>
+                                </div>
+                            ) : highestBid ? (
+                                /* Someone else won */
+                                <div className="mb-4 rounded-xl bg-gray-100 p-6 text-center">
+                                    <img
+                                        src={`https://api.dicebear.com/7.x/initials/svg?seed=${highestBid.bidder_name.charAt(0)}&backgroundColor=rose`}
+                                        className="mx-auto mb-3 h-14 w-14 rounded-full"
+                                        alt=""
+                                    />
+                                    <p className="text-sm font-medium text-gray-500">
+                                        Won by <span className="font-bold text-gray-800">{highestBid.bidder_name}</span>
+                                    </p>
+                                    <p className="mt-1 text-2xl font-extrabold text-gray-800">{formatPrice(highestBid.amount)}</p>
                                 </div>
                             ) : (
-                                <div className="divide-y divide-[#e3e3e0] dark:divide-[#3E3E3A]">
-                                    {[...product.bids]
-                                        .sort((a, b) => b.id - a.id)
-                                        .map((bid) => {
-                                            const isTopBid = highestBid && bid.id === highestBid.id;
-                                            const isOwnBid = ownBidderName && bid.bidder_name === ownBidderName;
-
-                                            return (
-                                                <div key={bid.id} className={`flex items-center justify-between px-4 py-3 sm:px-6 transition-all
-                                                    ${isTopBid ? 'bg-green-50 dark:bg-green-900/10' : ''}
-                                                    ${isOwnBid ? 'ring-1 ring-inset ring-blue-200 dark:ring-blue-800' : ''}`}
-                                                >
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium
-                                                            ${isOwnBid
-                                                                ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
-                                                                : 'bg-[#e3e3e0] text-[#706f6c] dark:bg-[#3E3E3A] dark:text-[#A1A09A]'}`}
-                                                        >
-                                                            {bid.bidder_name.charAt(0).toUpperCase()}
-                                                        </div>
-                                                        <div>
-                                                            <p className="text-sm font-medium text-[#1b1b18] dark:text-[#EDEDEC]">
-                                                                {bid.bidder_name}
-                                                                {isOwnBid && (
-                                                                    <span className="ml-1 text-xs text-blue-600 dark:text-blue-400">(you)</span>
-                                                                )}
-                                                            </p>
-                                                            <p className="text-xs text-[#b0b0ab] dark:text-[#5E5E5A]">
-                                                                {formatTime(bid.created_at)}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                    <span className={`text-sm font-semibold
-                                                        ${isTopBid ? 'text-green-600 dark:text-green-400' : 'text-[#1b1b18] dark:text-[#EDEDEC]'}`}
-                                                    >
-                                                        {formatPrice(bid.amount)}
-                                                    </span>
-                                                </div>
-                                            );
-                                        })}
+                                <div className="mb-4 rounded-xl bg-gray-100 p-6 text-center">
+                                    <p className="text-gray-500">Auction ended with no bids</p>
                                 </div>
                             )}
                         </div>
-                    </div>
+                    )}
+
+                    {/* ===== BID HISTORY ===== */}
+                    {product.bids.length > 0 && (
+                        <div className="border-t border-gray-100 px-6 pb-6">
+                            <h4 className="mb-3 mt-4 text-xs font-semibold uppercase tracking-wide text-gray-400">Bid History</h4>
+                            <div className="space-y-2">
+                                {[...product.bids].sort((a, b) => b.id - a.id).slice(0, 5).map((bid) => {
+                                    const isTopBid = highestBid && bid.id === highestBid.id;
+                                    const isOwn = ownBidderName && bid.bidder_name === ownBidderName;
+
+                                    return (
+                                        <div key={bid.id} className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm
+                                            ${isTopBid ? 'bg-green-50' : ''}
+                                            ${isOwn ? 'ring-1 ring-blue-100' : ''}`}
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold
+                                                    ${isOwn ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}
+                                                >
+                                                    {bid.bidder_name.charAt(0)}
+                                                </span>
+                                                <span className="font-medium text-gray-700">
+                                                    {bid.bidder_name}
+                                                    {isOwn && <span className="ml-1 text-xs text-blue-500">(you)</span>}
+                                                </span>
+                                            </div>
+                                            <span className={`font-mono text-xs font-semibold ${isTopBid ? 'text-green-600' : 'text-gray-500'}`}>
+                                                {formatPrice(bid.amount)}
+                                            </span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </>
