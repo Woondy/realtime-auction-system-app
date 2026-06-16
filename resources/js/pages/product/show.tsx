@@ -1,4 +1,4 @@
-import { Head } from '@inertiajs/react';
+import { Head, useForm, usePage } from '@inertiajs/react';
 
 interface Bid {
     id: number;
@@ -25,25 +25,43 @@ interface Props {
 }
 
 export default function Show({ product, highestBid }: Props) {
+    const { errors } = usePage().props;
+
+    const { data, setData, post, processing, reset } = useForm({
+        bidder_name: '',
+        amount: '',
+    });
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        post(`/products/${product.id}/bids`, {
+            onSuccess: () => reset(),
+        });
+    };
+
     const currentPrice = highestBid
         ? Number(highestBid.amount)
         : Number(product.starting_price);
+
+    const isEnded = product.status === 'ended';
+    const isActive = product.status === 'active';
+
+    const formatPrice = (value: number | string) =>
+        '¥' + Number(value).toLocaleString('en-US', { minimumFractionDigits: 2 });
+
+    const formatTime = (dateString: string) =>
+        new Date(dateString).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     return (
         <>
             <Head title={product.name} />
 
             <div className="min-h-screen bg-[#FDFDFC] dark:bg-[#0a0a0a]">
-                {/* Hero Section */}
-                <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
+                <div className="mx-auto max-w-3xl px-4 py-12 sm:px-6 lg:px-8">
                     {/* Product Image Placeholder */}
                     <div className="mb-8 overflow-hidden rounded-xl bg-gradient-to-br from-gray-100 to-gray-200 shadow-lg dark:from-gray-800 dark:to-gray-700">
                         {product.image ? (
-                            <img
-                                src={product.image}
-                                alt={product.name}
-                                className="h-64 w-full object-cover"
-                            />
+                            <img src={product.image} alt={product.name} className="h-64 w-full object-cover" />
                         ) : (
                             <div className="flex h-64 w-full items-center justify-center text-gray-400 dark:text-gray-500">
                                 <svg className="h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -55,13 +73,15 @@ export default function Show({ product, highestBid }: Props) {
 
                     {/* Product Info */}
                     <div className="space-y-6">
-                        <div>
-                            <span className="inline-block rounded-full px-3 py-1 text-xs font-medium capitalize
-                                ${product.status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : ''}
-                                ${product.status === 'pending' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300' : ''}
+                        <div className="flex items-center gap-3">
+                            <span className={`inline-block rounded-full px-3 py-1 text-xs font-medium capitalize
+                                ${product.status === 'active' ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : ''}
+                                ${product.status === 'pending' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300' : ''}
                                 ${product.status === 'ended' ? 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400' : ''}
-                            ">
-                                {product.status}
+                            `}>
+                                {product.status === 'pending' && 'Pending'}
+                                {product.status === 'active' && 'Active'}
+                                {product.status === 'ended' && 'Ended'}
                             </span>
                         </div>
 
@@ -82,9 +102,131 @@ export default function Show({ product, highestBid }: Props) {
                                     {highestBid ? 'Highest Bid' : 'Starting Price'}
                                 </span>
                                 <span className="text-3xl font-bold text-[#1b1b18] dark:text-[#EDEDEC]">
-                                    ¥{currentPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                                    {formatPrice(currentPrice)}
                                 </span>
                             </div>
+                        </div>
+
+                        {/* Bid Form */}
+                        {!isEnded && (
+                            <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-[#e3e3e0] bg-white p-6 shadow-sm dark:border-[#3E3E3A] dark:bg-[#161615]">
+                                <h3 className="font-semibold text-[#1b1b18] dark:text-[#EDEDEC]">
+                                    {isActive ? 'Place Your Bid' : 'Be the First Bidder'}
+                                </h3>
+
+                                <div>
+                                    <label htmlFor="bidder_name" className="mb-1 block text-sm font-medium text-[#706f6c] dark:text-[#A1A09A]">
+                                         Your Name
+                                    </label>
+                                    <input
+                                        id="bidder_name"
+                                        type="text"
+                                        value={data.bidder_name}
+                                        onChange={(e) => setData('bidder_name', e.target.value)}
+                                        className={`w-full rounded-lg border px-4 py-2.5 text-sm transition-colors
+                                            bg-white dark:bg-[#1b1b18] text-[#1b1b18] dark:text-[#EDEDEC]
+                                            ${errors.bidder_name
+                                                ? 'border-red-400 dark:border-red-500 focus:border-red-500 focus:ring-red-500'
+                                                : 'border-[#e3e3e0] dark:border-[#3E3E3A] focus:border-[#1b1b18] dark:focus:border-[#EDEDEC]'
+                                            }
+                                            focus:outline-none focus:ring-1`}
+                                        placeholder="Enter your name"
+                                    />
+                                    {errors.bidder_name && (
+                                        <p className="mt-1 text-sm text-red-500">{errors.bidder_name}</p>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <label htmlFor="amount" className="mb-1 block text-sm font-medium text-[#706f6c] dark:text-[#A1A09A]">
+                                        Bid Amount (min ¥{(currentPrice + 0.01).toLocaleString('en-US', { minimumFractionDigits: 2 })})
+                                    </label>
+                                    <input
+                                        id="amount"
+                                        type="number"
+                                        step="0.01"
+                                        min={currentPrice + 0.01}
+                                        value={data.amount}
+                                        onChange={(e) => setData('amount', e.target.value)}
+                                        className={`w-full rounded-lg border px-4 py-2.5 text-sm transition-colors
+                                            bg-white dark:bg-[#1b1b18] text-[#1b1b18] dark:text-[#EDEDEC]
+                                            ${errors.amount
+                                                ? 'border-red-400 dark:border-red-500 focus:border-red-500 focus:ring-red-500'
+                                                : 'border-[#e3e3e0] dark:border-[#3E3E3A] focus:border-[#1b1b18] dark:focus:border-[#EDEDEC]'
+                                            }
+                                            focus:outline-none focus:ring-1`}
+                                        placeholder="Enter bid amount"
+                                    />
+                                    {errors.amount && (
+                                        <p className="mt-1 text-sm text-red-500">{errors.amount}</p>
+                                    )}
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    disabled={processing}
+                                    className="w-full rounded-lg bg-[#1b1b18] px-4 py-3 text-sm font-medium text-white transition-all
+                                        hover:bg-black active:scale-[0.98]
+                                        disabled:cursor-not-allowed disabled:opacity-50
+                                        dark:bg-[#eeeeec] dark:text-[#1C1C1A] dark:hover:bg-white"
+                                >
+                                    {processing ? 'Submitting...' : 'Bid'}
+                                </button>
+                            </form>
+                        )}
+
+                        {isEnded && (
+                            <div className="rounded-xl border border-[#e3e3e0] bg-white p-6 text-center shadow-sm dark:border-[#3E3E3A] dark:bg-[#161615]">
+                                <p className="text-[#706f6c] dark:text-[#A1A09A]">This auction has ended.</p>
+                            </div>
+                        )}
+
+                        {/* Bid List */}
+                        <div className="rounded-xl border border-[#e3e3e0] bg-white shadow-sm dark:border-[#3E3E3A] dark:bg-[#161615]">
+                            <div className="border-b border-[#e3e3e0] px-6 py-4 dark:border-[#3E3E3A]">
+                                <h3 className="font-semibold text-[#1b1b18] dark:text-[#EDEDEC]">Bid History</h3>
+                            </div>
+
+                            {product.bids.length === 0 ? (
+                                <div className="px-6 py-12 text-center">
+                                    <p className="text-[#706f6c] dark:text-[#A1A09A]">No bids yet</p>
+                                    <p className="mt-1 text-sm text-[#b0b0ab] dark:text-[#5E5E5A]">
+                                        Be the first to bid and start the auction!
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="divide-y divide-[#e3e3e0] dark:divide-[#3E3E3A]">
+                                    {[...product.bids]
+                                        .sort((a, b) => b.id - a.id)
+                                        .map((bid) => {
+                                            const isTopBid = highestBid && bid.id === highestBid.id;
+                                            return (
+                                                <div key={bid.id} className={`flex items-center justify-between px-6 py-3
+                                                    ${isTopBid ? 'bg-green-50 dark:bg-green-900/10' : ''}`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#e3e3e0] text-sm font-medium text-[#706f6c] dark:bg-[#3E3E3A] dark:text-[#A1A09A]">
+                                                            {bid.bidder_name.charAt(0).toUpperCase()}
+                                                        </div>
+                                                        <div>
+                                                            <p className="text-sm font-medium text-[#1b1b18] dark:text-[#EDEDEC]">
+                                                                {bid.bidder_name}
+                                                            </p>
+                                                            <p className="text-xs text-[#b0b0ab] dark:text-[#5E5E5A]">
+                                                                {formatTime(bid.created_at)}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <span className={`text-sm font-semibold
+                                                        ${isTopBid ? 'text-green-600 dark:text-green-400' : 'text-[#1b1b18] dark:text-[#EDEDEC]'}`}
+                                                    >
+                                                        {formatPrice(bid.amount)}
+                                                    </span>
+                                                </div>
+                                            );
+                                        })}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
