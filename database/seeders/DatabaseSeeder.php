@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Product;
 use App\Models\User;
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
@@ -15,11 +16,22 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // User::factory(10)->create();
+        User::firstOrCreate(
+            ['email' => 'test@example.com'],
+            [
+                'name' => 'Test User',
+                'password' => bcrypt('password'),
+            ]
+        );
 
-        User::factory()->create([
-            'name' => 'Test User',
-            'email' => 'test@example.com',
-        ]);
+        Product::firstOrCreate(
+            ['name' => 'Vintage Rolex Submariner 16610'],
+            [
+                'description' => 'A classic stainless steel dive watch from 2005. Features a black dial, unidirectional bezel, and automatic movement. Complete with original box and papers.',
+                'image' => null,
+                'starting_price' => 45000.00,
+                'status' => 'pending',
+            ]
+        );
     }
 }
