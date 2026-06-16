@@ -1,5 +1,6 @@
 {
     "$schema": "https://www.schemastore.org/package.json",
+    "name": "realtime-auction-system-app",
     "private": true,
     "type": "module",
     "scripts": {
