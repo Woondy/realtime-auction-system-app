@@ -8,6 +8,15 @@ use Inertia\Response;
 
 class ProductController extends Controller
 {
+    public function index(): Response
+    {
+        $products = Product::withCount('bids')->orderByDesc('created_at')->get();
+
+        return Inertia::render('product/index', [
+            'products' => $products,
+        ]);
+    }
+
     public function show(Product $product): Response
     {
         $product->load('bids');
