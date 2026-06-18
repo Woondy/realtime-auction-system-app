@@ -2,6 +2,21 @@ import '@testing-library/jest-dom';
 import React from 'react';
 import { vi } from 'vitest';
 
+// Mock Echo module to avoid real WebSocket connections in tests
+vi.mock('@/echo', () => {
+    const mockChannel = {
+        listen: vi.fn(() => mockChannel),
+        stopListening: vi.fn(() => mockChannel),
+    };
+
+    return {
+        echo: {
+            channel: vi.fn(() => mockChannel),
+        },
+        default: { channel: vi.fn(() => mockChannel) },
+    };
+});
+
 // Mock Inertia.js React bindings
 vi.mock('@inertiajs/react', () => {
     return {
@@ -27,6 +42,7 @@ vi.mock('@inertiajs/react', () => {
             };
             const post = vi.fn();
             const reset = vi.fn();
+
             return {
                 data,
                 setData,

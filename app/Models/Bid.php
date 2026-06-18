@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Database\Factories\BidFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,12 +11,14 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $product_id
  * @property string $bidder_name
  * @property string $amount
- * @use \Database\Factories\BidFactory<\App\Models\Bid>
+ *
+ * @use BidFactory<Bid>
  */
 class Bid extends Model
 {
-    /** @use HasFactory<\Database\Factories\BidFactory> */
+    /** @use HasFactory<BidFactory> */
     use HasFactory;
+
     protected $fillable = [
         'product_id',
         'bidder_name',

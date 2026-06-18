@@ -13,13 +13,11 @@ class AuctionStarted implements ShouldBroadcast
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
-    public function __construct(public Product $product)
-    {
-    }
+    public function __construct(public Product $product) {}
 
     public function broadcastOn(): Channel
     {
-        return new Channel('auction.' . $this->product->id);
+        return new Channel('auction.'.$this->product->id);
     }
 
     public function broadcastAs(): string

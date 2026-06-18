@@ -30,6 +30,26 @@ This document explains the key architectural decisions made during the developme
   - To support narrow screens (down to 320px) without duplicating HTML components, we used CSS media queries to stack the Name input while keeping elements inline on desktop in the correct sequence.
   - Due to client-server clock drift, the client timer might hit `00:00` before the server queue job has run. By throttling `window.location.reload()` to once every 5 seconds, we prevented infinite page-flashing loops.
 
+### 6. Service Layer Extraction (`AuctionService`)
+- **Decision**: Extract bidding logic from `BidController` into a dedicated `AuctionService` class.
+- **Rationale**: Controllers should be thin HTTP adapters. By moving bid placement, auction state transitions, and optimistic locking into a service class, the business logic becomes reusable, testable in isolation (10 dedicated unit tests), and decoupled from the HTTP layer.
+
+### 7. Optimistic Lock on Auction Ending (`EndAuction` Job)
+- **Decision**: Use an atomic SQL `UPDATE ... WHERE status = 'active'` statement instead of read-then-write in the `EndAuction` job.
+- **Rationale**: Under high concurrency or queue retry scenarios, multiple workers could read the same `active` product and attempt to end it simultaneously. The optimistic lock ensures only one worker successfully transitions the product to `ended`, preventing race conditions and duplicate winner broadcasts.
+
+### 8. `bcmath` for Precise Decimal Comparison
+- **Decision**: Use `bccomp()` for all monetary amount comparisons instead of native float operators.
+- **Rationale**: PHP floats suffer from precision loss (e.g., `0.1 + 0.2 === 0.3` is `false`). Since bid amounts are monetary values, even a 1-cent discrepancy is unacceptable. `bccomp($a, $b, 2)` compares two values to 2 decimal places with arbitrary precision, eliminating float-related bugs.
+
+### 9. Frontend Component Decomposition
+- **Decision**: Split the 610-line `show.tsx` into 7 focused components + 2 hooks + 2 lib files.
+- **Rationale**: A monolithic component is hard to test, reason about, and maintain. Decomposition enables:
+  - Independent testing (21 Vitest tests covering each state)
+  - Code splitting (Vite emits separate chunks per component)
+  - Clear ownership boundaries (each component owns one auction state)
+  - Reusable hooks (`useCountdown`, `useAuctionSocket`) can be used in other auction-related pages
+
 ---
 
 ## 🔮 What We Would Do Differently Next Time (Production Scale)

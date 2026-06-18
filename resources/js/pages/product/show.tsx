@@ -1,171 +1,84 @@
-import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { useEffect, useState } from 'react';
+import { Head, Link } from '@inertiajs/react';
+import { useState } from 'react';
+import { useAuctionSocket } from '@/hooks/useAuctionSocket';
+import { useCountdown } from '@/hooks/useCountdown';
+import type { ShowProps } from '@/lib/types';
+import { AuctionActive } from './components/AuctionActive';
+import { AuctionEnded } from './components/AuctionEnded';
+import { AuctionPending } from './components/AuctionPending';
+import { BidHistory } from './components/BidHistory';
+import { ProductCard } from './components/ProductCard';
+import { useFlash, Toast } from './components/Toast';
 
-interface Bid {
-    id: number;
-    product_id: number;
-    bidder_name: string;
-    amount: string;
-    created_at: string;
-}
+export default function Show({ product, highestBid }: ShowProps) {
+    const flash = useFlash();
+    const [toastKey, setToastKey] = useState(0);
 
-interface Product {
-    id: number;
-    name: string;
-    description: string | null;
-    image: string | null;
-    starting_price: string;
-    status: 'pending' | 'active' | 'ended';
-    ends_at: string | null;
-    bids: Bid[];
-}
+    // bidderName: the current value in the input field (user can change freely).
+    // Initialized empty — user types their own name on first visit.
+    const [bidderName, setBidderName] = useState('');
 
-interface Props {
-    product: Product;
-    highestBid: Bid | null;
-}
+    // lastBidName: the name used for the user's last *successful* bid.
+    // Recalled from localStorage so "You are the winner" works across page refreshes
+    // and auction-end reloads. This is NOT the same as the current input value —
+    // if the user changes the input to a different name without bidding, it
+    // should not affect winner detection.
+    const [lastBidName, setLastBidName] = useState(() => {
+        if (typeof window === 'undefined') {
+            return '';
+        }
 
-export default function Show({ product, highestBid }: Props) {
-    const { errors } = usePage().props;
-    const flash = (usePage().props as Record<string, unknown>).flash as
-        | { success?: string }
-        | undefined;
-    const [showToast, setShowToast] = useState(false);
-
-    const ownBidderName =
-        typeof window !== 'undefined'
-            ? localStorage.getItem('lastBidderName')
-            : null;
-
-    const { data, setData, post, processing, reset } = useForm({
-        bidder_name: ownBidderName ?? '',
-        amount: (highestBid
-            ? Number(highestBid.amount) + 100
-            : Number(product.starting_price) + 100
-        ).toString(),
+        return localStorage.getItem('lastBidderName') ?? '';
     });
-
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        post(`/products/${product.id}/bids`, {
-            onSuccess: () => {
-                if (data.bidder_name) {
-                    localStorage.setItem('lastBidderName', data.bidder_name);
-                }
-
-                // Pre-fill amount for next bid
-                const nextAmount = Number(data.amount) + 100;
-                reset();
-                setData('amount', nextAmount.toString());
-                setShowToast(true);
-                setTimeout(() => setShowToast(false), 3000);
-            },
-        });
-    };
-
-    const addHundred = () => {
-        setData('amount', (Number(data.amount || 0) + 100).toString());
-    };
 
     const currentPrice = highestBid
         ? Number(highestBid.amount)
         : Number(product.starting_price);
 
+    const initialAmount = String(
+        highestBid
+            ? Number(highestBid.amount) + 100
+            : Number(product.starting_price) + 100,
+    );
+
     const isEnded = product.status === 'ended';
     const isActive = product.status === 'active';
     const isPending = product.status === 'pending';
-    const isOwnTopBid =
-        highestBid && ownBidderName && highestBid.bidder_name === ownBidderName;
+    const isOwnTopBid = Boolean(
+        highestBid && lastBidName && highestBid.bidder_name === lastBidName,
+    );
 
-    const formatPrice = (value: number | string) =>
-        '$' + Number(value).toLocaleString('en-US');
+    const handleCountdownEnd = () => {
+        const key = `last_reload_${product.id}`;
+        const last = sessionStorage.getItem(key);
+        const now = Date.now();
 
-    // Countdown timer
-    const calcRemaining = (endsAt: string): number =>
-        Math.max(
-            0,
-            Math.floor((new Date(endsAt).getTime() - Date.now()) / 1000),
-        );
-
-    const [timeLeft, setTimeLeft] = useState<number | null>(() => {
-        if (!product.ends_at || isEnded) {
-            return null;
+        if (!last || now - parseInt(last) > 5000) {
+            sessionStorage.setItem(key, now.toString());
+            window.location.reload();
         }
-
-        return calcRemaining(product.ends_at);
-    });
-
-    useEffect(() => {
-        if (!product.ends_at || isEnded) {
-            return;
-        }
-
-        const interval = setInterval(() => {
-            const remaining = calcRemaining(product.ends_at!);
-            setTimeLeft(remaining);
-
-            if (remaining <= 0) {
-                clearInterval(interval);
-                // Throttle reloads to prevent infinite reload loop when backend hasn't updated status yet
-                const lastReload = sessionStorage.getItem(
-                    `last_reload_${product.id}`,
-                );
-                const now = Date.now();
-                if (!lastReload || now - parseInt(lastReload) > 5000) {
-                    sessionStorage.setItem(
-                        `last_reload_${product.id}`,
-                        now.toString(),
-                    );
-                    window.location.reload();
-                }
-            }
-        }, 200);
-
-        return () => clearInterval(interval);
-    }, [product.ends_at, isEnded]);
-
-    const formatCountdown = (seconds: number): string => {
-        const m = Math.floor(seconds / 60);
-        const s = seconds % 60;
-
-        return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     };
 
-    const isUrgent = timeLeft !== null && timeLeft <= 10;
+    const timeLeft = useCountdown(
+        product.ends_at && !isEnded ? product.ends_at : null,
+        { onEnd: handleCountdownEnd },
+    );
 
-    // Real-time WebSocket listeners
-    useEffect(() => {
-        if (typeof window.Echo === 'undefined') {
-            return;
-        }
+    useAuctionSocket(product.id);
 
-        const channel = window.Echo.channel(`auction.${product.id}`);
-        channel.listen('.BidPlaced', () => {
-            router.reload({
-                only: ['product', 'highestBid'],
-                preserveState: true,
-                preserveScroll: true,
-            });
-        });
-        channel.listen('.AuctionStarted', () => {
-            router.reload({ preserveScroll: true });
-        });
-        channel.listen('.AuctionEnded', () => {
-            router.reload({ preserveScroll: true });
-        });
-
-        return () => {
-            channel.stopListening('.BidPlaced');
-            channel.stopListening('.AuctionStarted');
-            channel.stopListening('.AuctionEnded');
-        };
-    }, [product.id]);
+    const handleBidSuccess = (usedName: string) => {
+        // Record the name that was actually used for this successful bid,
+        // not the current input value (which may have changed during the
+        // request flight).
+        localStorage.setItem('lastBidderName', usedName);
+        setLastBidName(usedName);
+        setToastKey((k) => k + 1);
+    };
 
     return (
         <>
             <Head title={product.name} />
             <div className="flex min-h-screen flex-col items-center bg-gray-100 p-4">
-                {/* Back button */}
                 <div className="mb-4 w-full max-w-md">
                     <Link
                         href="/"
@@ -187,427 +100,47 @@ export default function Show({ product, highestBid }: Props) {
                         Back to List
                     </Link>
                 </div>
-                {/* Card */}
-                <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-xl">
-                    {/* Header Image */}
-                    <div className="relative h-56 bg-gradient-to-br from-orange-100 via-pink-100 to-rose-200">
-                        {product.image ? (
-                            <img
-                                src={product.image}
-                                alt=""
-                                className="h-full w-full object-cover"
-                            />
-                        ) : (
-                            <div className="flex h-full items-end justify-end p-6">
-                                <svg
-                                    className="h-40 w-40 text-rose-300/60"
-                                    viewBox="0 0 100 100"
-                                    fill="currentColor"
-                                >
-                                    <circle
-                                        cx="50"
-                                        cy="50"
-                                        r="35"
-                                        stroke="currentColor"
-                                        strokeWidth="8"
-                                        fill="none"
-                                    />
-                                    <circle
-                                        cx="50"
-                                        cy="50"
-                                        r="28"
-                                        fill="white"
-                                        fillOpacity="0.6"
-                                    />
-                                    <line
-                                        x1="50"
-                                        y1="22"
-                                        x2="50"
-                                        y2="28"
-                                        stroke="currentColor"
-                                        strokeWidth="4"
-                                        strokeLinecap="round"
-                                    />
-                                    <line
-                                        x1="50"
-                                        y1="72"
-                                        x2="50"
-                                        y2="78"
-                                        stroke="currentColor"
-                                        strokeWidth="4"
-                                        strokeLinecap="round"
-                                    />
-                                </svg>
-                            </div>
-                        )}
-                        {/* Product name overlay */}
-                        <div className="absolute right-0 bottom-0 left-0 bg-gradient-to-t from-black/40 to-transparent p-4 pt-8">
-                            <h2 className="text-lg font-bold text-white drop-shadow-sm">
-                                {product.name}
-                            </h2>
-                        </div>
-                    </div>
 
-                    {/* Toast */}
-                    {showToast && (
-                        <div className="fixed top-4 left-1/2 z-50 -translate-x-1/2 animate-[slideDown_0.3s_ease-out]">
-                            <div className="flex items-center gap-2 rounded-full bg-green-500 px-5 py-2.5 text-sm font-medium text-white shadow-lg">
-                                <svg
-                                    className="h-4 w-4"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                >
-                                    <path
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                        strokeWidth={2.5}
-                                        d="M5 13l4 4L19 7"
-                                    />
-                                </svg>
-                                {flash?.success ?? 'Bid Placed!'}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* ===== WAITING STATE ===== */}
+                <ProductCard product={product}>
                     {isPending && (
-                        <div className="p-6">
-                            {/* Timer - static 01:00 */}
-                            <div className="mb-4 flex items-center justify-center gap-2 font-mono text-2xl font-bold text-gray-300">
-                                <svg
-                                    className="h-5 w-5"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                    strokeWidth={2}
-                                >
-                                    <circle cx="12" cy="12" r="10" />
-                                    <path d="M12 6v6l4 2" />
-                                </svg>
-                                01:00
-                            </div>
-
-                            {/* Status */}
-                            <div className="mb-6 flex flex-col items-center gap-3 py-4">
-                                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100">
-                                    <svg
-                                        className="h-6 w-6 text-gray-400"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        stroke="currentColor"
-                                        strokeWidth={1.5}
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            d="M8.288 15.038a5.25 5.25 0 017.424 0M5.106 11.856c3.807-3.808 9.98-3.808 13.788 0M1.924 8.674c5.565-5.565 14.587-5.565 20.152 0M12.53 18.22l-.53.53-.53-.53a.749.749 0 011.06 0z"
-                                        />
-                                    </svg>
-                                </div>
-                                <p className="text-base font-semibold text-gray-800">
-                                    Please{' '}
-                                    <span className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-sm">
-                                        Bid
-                                    </span>{' '}
-                                    to Start
-                                </p>
-                            </div>
-
-                            {/* Action Bar */}
-                            <form
-                                onSubmit={handleSubmit}
-                                className="flex flex-wrap items-center gap-2 rounded-xl bg-gray-50 p-3"
-                            >
-                                <input
-                                    type="text"
-                                    value={data.bidder_name}
-                                    onChange={(e) =>
-                                        setData('bidder_name', e.target.value)
-                                    }
-                                    placeholder="Name"
-                                    className="w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-rose-300 focus:ring-1 focus:ring-rose-300 focus:outline-none min-[440px]:order-2 min-[440px]:w-auto min-[440px]:flex-1"
-                                />
-                                <input
-                                    type="number"
-                                    value={data.amount}
-                                    onChange={(e) =>
-                                        setData('amount', e.target.value)
-                                    }
-                                    placeholder="Amount"
-                                    className="order-2 w-24 shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium focus:border-rose-300 focus:ring-1 focus:ring-rose-300 focus:outline-none min-[440px]:order-1"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={addHundred}
-                                    className="order-3 shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 min-[440px]:order-3"
-                                >
-                                    +100
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={processing}
-                                    className="order-4 flex shrink-0 items-center gap-1.5 rounded-lg bg-rose-500 px-5 py-2 text-sm font-semibold text-white transition-all hover:bg-rose-600 active:scale-95 disabled:opacity-50 min-[440px]:order-4"
-                                >
-                                    {processing && (
-                                        <svg
-                                            className="h-4 w-4 animate-spin"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                        >
-                                            <circle
-                                                className="opacity-25"
-                                                cx="12"
-                                                cy="12"
-                                                r="10"
-                                                stroke="currentColor"
-                                                strokeWidth="4"
-                                            />
-                                            <path
-                                                className="opacity-75"
-                                                fill="currentColor"
-                                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                                            />
-                                        </svg>
-                                    )}
-                                    Bid
-                                </button>
-                            </form>
-                            {errors.amount && (
-                                <p className="mt-2 text-center text-xs text-red-500">
-                                    {errors.amount}
-                                </p>
-                            )}
-                            {errors.bidder_name && (
-                                <p className="mt-2 text-center text-xs text-red-500">
-                                    {errors.bidder_name}
-                                </p>
-                            )}
-                        </div>
+                        <AuctionPending
+                            productId={product.id}
+                            bidderName={bidderName}
+                            onBidderNameChange={setBidderName}
+                            initialAmount={initialAmount}
+                            onBidSuccess={handleBidSuccess}
+                        />
                     )}
-
-                    {/* ===== ACTIVE STATE ===== */}
                     {isActive && (
-                        <div className="p-6">
-                            {/* Timer */}
-                            <div
-                                className={`mb-4 flex items-center justify-center gap-2 font-mono text-2xl font-bold transition-colors ${isUrgent ? 'text-red-500' : 'text-gray-700'}`}
-                            >
-                                <svg
-                                    className="h-5 w-5"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                    strokeWidth={2}
-                                >
-                                    <circle cx="12" cy="12" r="10" />
-                                    <path d="M12 6v6l4 2" />
-                                </svg>
-                                {timeLeft !== null
-                                    ? formatCountdown(timeLeft)
-                                    : '00:00'}
-                            </div>
-
-                            {/* Status */}
-                            <div className="mb-6 flex flex-col items-center gap-3 py-4">
-                                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gray-100 text-lg font-bold text-gray-500">
-                                    {highestBid
-                                        ? highestBid.bidder_name
-                                              .charAt(0)
-                                              .toUpperCase()
-                                        : '?'}
-                                </div>
-                                <p className="text-2xl font-bold text-gray-800">
-                                    {formatPrice(currentPrice)}
-                                </p>
-                                <p className="text-sm text-gray-500">
-                                    {isOwnTopBid
-                                        ? 'Current Bid by You'
-                                        : `Current Bid by ${highestBid?.bidder_name ?? 'N/A'}`}
-                                </p>
-                            </div>
-
-                            {/* Action Bar */}
-                            <form
-                                onSubmit={handleSubmit}
-                                className="flex flex-wrap items-center gap-2 rounded-xl bg-gray-50 p-3"
-                            >
-                                <input
-                                    type="text"
-                                    value={data.bidder_name}
-                                    onChange={(e) =>
-                                        setData('bidder_name', e.target.value)
-                                    }
-                                    placeholder="Name"
-                                    disabled={timeLeft === 0 || processing}
-                                    className="w-full min-w-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-rose-300 focus:ring-1 focus:ring-rose-300 focus:outline-none disabled:opacity-50 min-[440px]:order-2 min-[440px]:w-auto min-[440px]:flex-1"
-                                />
-                                <input
-                                    type="number"
-                                    value={data.amount}
-                                    onChange={(e) =>
-                                        setData('amount', e.target.value)
-                                    }
-                                    placeholder="Amount"
-                                    disabled={timeLeft === 0 || processing}
-                                    className="order-2 w-24 shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium focus:border-rose-300 focus:ring-1 focus:ring-rose-300 focus:outline-none disabled:opacity-50 min-[440px]:order-1"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={addHundred}
-                                    disabled={timeLeft === 0 || processing}
-                                    className="order-3 shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-50 min-[440px]:order-3"
-                                >
-                                    +100
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={timeLeft === 0 || processing}
-                                    className="order-4 flex shrink-0 items-center gap-1.5 rounded-lg bg-rose-500 px-5 py-2 text-sm font-semibold text-white transition-all hover:bg-rose-600 active:scale-95 disabled:opacity-50 min-[440px]:order-4"
-                                >
-                                    {processing && (
-                                        <svg
-                                            className="h-4 w-4 animate-spin"
-                                            viewBox="0 0 24 24"
-                                            fill="none"
-                                        >
-                                            <circle
-                                                className="opacity-25"
-                                                cx="12"
-                                                cy="12"
-                                                r="10"
-                                                stroke="currentColor"
-                                                strokeWidth="4"
-                                            />
-                                            <path
-                                                className="opacity-75"
-                                                fill="currentColor"
-                                                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                                            />
-                                        </svg>
-                                    )}
-                                    {timeLeft === 0 ? 'Ending...' : 'Bid'}
-                                </button>
-                            </form>
-                            {errors.amount && (
-                                <p className="mt-2 text-center text-xs text-red-500">
-                                    {errors.amount}
-                                </p>
-                            )}
-                            {errors.bidder_name && (
-                                <p className="mt-2 text-center text-xs text-red-500">
-                                    {errors.bidder_name}
-                                </p>
-                            )}
-                        </div>
+                        <AuctionActive
+                            productId={product.id}
+                            timeLeft={timeLeft}
+                            currentPrice={currentPrice}
+                            highestBid={highestBid}
+                            isOwnTopBid={isOwnTopBid}
+                            bidderName={bidderName}
+                            onBidderNameChange={setBidderName}
+                            initialAmount={initialAmount}
+                            onBidSuccess={handleBidSuccess}
+                        />
                     )}
-
-                    {/* ===== ENDED STATE ===== */}
                     {isEnded && (
-                        <div className="p-6">
-                            {highestBid && isOwnTopBid ? (
-                                /* You won */
-                                <div className="mb-4 rounded-xl bg-green-500 p-6 text-center text-white">
-                                    <svg
-                                        className="mx-auto mb-2 h-8 w-8"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        stroke="currentColor"
-                                        strokeWidth={2}
-                                    >
-                                        <path
-                                            strokeLinecap="round"
-                                            strokeLinejoin="round"
-                                            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                                        />
-                                    </svg>
-                                    <p className="text-lg font-bold">
-                                        You are the winner!
-                                    </p>
-                                    <p className="mt-1 text-3xl font-extrabold">
-                                        {formatPrice(highestBid.amount)}
-                                    </p>
-                                </div>
-                            ) : highestBid ? (
-                                /* Someone else won */
-                                <div className="mb-4 rounded-xl bg-gray-100 p-6 text-center">
-                                    <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full bg-gray-200 text-xl font-bold text-gray-600">
-                                        {highestBid.bidder_name
-                                            .charAt(0)
-                                            .toUpperCase()}
-                                    </div>
-                                    <p className="text-sm font-medium text-gray-500">
-                                        Won by{' '}
-                                        <span className="font-bold text-gray-800">
-                                            {highestBid.bidder_name}
-                                        </span>
-                                    </p>
-                                    <p className="mt-1 text-2xl font-extrabold text-gray-800">
-                                        {formatPrice(highestBid.amount)}
-                                    </p>
-                                </div>
-                            ) : (
-                                <div className="mb-4 rounded-xl bg-gray-100 p-6 text-center">
-                                    <p className="text-gray-500">
-                                        Auction ended with no bids
-                                    </p>
-                                </div>
-                            )}
-                        </div>
+                        <AuctionEnded
+                            highestBid={highestBid}
+                            isOwnTopBid={isOwnTopBid}
+                        />
                     )}
-
-                    {/* ===== BID HISTORY ===== */}
-                    {product.bids.length > 0 && (
-                        <div className="border-t border-gray-100 px-6 pb-6">
-                            <h4 className="mt-4 mb-3 text-xs font-semibold tracking-wide text-gray-400 uppercase">
-                                Bid History
-                            </h4>
-                            <div className="space-y-2">
-                                {[...product.bids]
-                                    .sort((a, b) => b.id - a.id)
-                                    .slice(0, 5)
-                                    .map((bid) => {
-                                        const isTopBid =
-                                            highestBid &&
-                                            bid.id === highestBid.id;
-                                        const isOwn =
-                                            ownBidderName &&
-                                            bid.bidder_name === ownBidderName;
-
-                                        return (
-                                            <div
-                                                key={bid.id}
-                                                className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm ${isTopBid ? 'bg-green-50' : ''} ${isOwn ? 'ring-1 ring-blue-100' : ''}`}
-                                            >
-                                                <div className="flex items-center gap-2">
-                                                    <span
-                                                        className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${isOwn ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'}`}
-                                                    >
-                                                        {bid.bidder_name.charAt(
-                                                            0,
-                                                        )}
-                                                    </span>
-                                                    <span className="font-medium text-gray-700">
-                                                        {bid.bidder_name}
-                                                        {isOwn && (
-                                                            <span className="ml-1 text-xs text-blue-500">
-                                                                (you)
-                                                            </span>
-                                                        )}
-                                                    </span>
-                                                </div>
-                                                <span
-                                                    className={`font-mono text-xs font-semibold ${isTopBid ? 'text-green-600' : 'text-gray-500'}`}
-                                                >
-                                                    {formatPrice(bid.amount)}
-                                                </span>
-                                            </div>
-                                        );
-                                    })}
-                            </div>
-                        </div>
-                    )}
-                </div>
+                    <BidHistory
+                        bids={product.bids}
+                        highestBid={highestBid}
+                        ownBidderName={lastBidName}
+                    />
+                </ProductCard>
             </div>
+
+            {toastKey > 0 && (
+                <Toast message={flash?.success} toastKey={toastKey} />
+            )}
         </>
     );
 }

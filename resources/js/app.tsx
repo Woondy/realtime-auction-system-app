@@ -11,6 +11,10 @@ createInertiaApp({
         color: '#4B5563',
     },
     setup({ el, App, props }) {
+        if (!el) {
+            return;
+        }
+
         createRoot(el).render(<App {...props} />);
     },
 });

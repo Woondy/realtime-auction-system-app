@@ -17,12 +17,11 @@ class AuctionEnded implements ShouldBroadcast
     public function __construct(
         public Product $product,
         public ?Bid $winner,
-    ) {
-    }
+    ) {}
 
     public function broadcastOn(): Channel
     {
-        return new Channel('auction.' . $this->product->id);
+        return new Channel('auction.'.$this->product->id);
     }
 
     public function broadcastAs(): string

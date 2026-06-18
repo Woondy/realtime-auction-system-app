@@ -3,13 +3,14 @@ import Pusher from 'pusher-js';
 
 declare global {
     interface Window {
-        Echo: Echo;
+        Echo: Echo<'reverb'>;
+        Pusher: typeof Pusher;
     }
 }
 
 window.Pusher = Pusher;
 
-window.Echo = new Echo({
+const echo = new Echo({
     broadcaster: 'reverb',
     key: import.meta.env.VITE_REVERB_APP_KEY,
     wsHost: import.meta.env.VITE_REVERB_HOST ?? 'localhost',
@@ -22,3 +23,9 @@ window.Echo = new Echo({
     forceTLS: false,
     enabledTransports: ['ws', 'wss'],
 });
+
+// Keep window.Echo for backward compatibility with any legacy code
+window.Echo = echo;
+
+export { echo };
+export default echo;

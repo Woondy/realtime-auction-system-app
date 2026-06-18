@@ -14,6 +14,10 @@ A highly responsive, real-time single-product bidding application built with **L
 - **Real-Time Synchronizations**: Multi-session bids update automatically via WebSocket-triggered Inertia page reloads.
 - **Throttled Reload & Anti-Flashing**: Client-side countdown reloads are throttled via session storage to prevent infinite reload loops caused by client-server clock drift.
 - **Form Validations**: Complete client-side and server-side validation alerts (e.g., preventing empty names, negative amounts, or bids lower than the current highest bid).
+- **Service Layer Abstraction**: `AuctionService` encapsulates bidding logic (bid placement, auction start/end, optimistic locking) for separation of concerns.
+- **Precise Decimal Arithmetic**: Uses `bcmath` for all amount comparisons to avoid floating-point precision issues.
+- **Rate Limiting**: Throttled bid endpoints (60 requests/minute) to prevent abuse.
+- **Component-Based Frontend**: `show.tsx` decomposed into focused components (`AuctionPending`, `AuctionActive`, `AuctionEnded`, `BidForm`, `BidHistory`, `ProductCard`, `Toast`) with shared hooks (`useCountdown`, `useAuctionSocket`).
 
 ---
 
@@ -89,18 +93,49 @@ Open `http://localhost:8080`.
 
 ---
 
+## 📁 Project Structure
+
+```
+app/
+├── Events/              # BidPlaced, AuctionStarted, AuctionEnded (broadcast)
+├── Http/
+│   ├── Controllers/     # ProductController, BidController
+│   └── Requests/        # StoreBidRequest (validation)
+├── Jobs/                # EndAuction (delayed queue job)
+├── Models/              # Product, Bid, User
+└── Services/            # AuctionService (business logic)
+resources/js/
+├── hooks/               # useCountdown, useAuctionSocket
+├── lib/                 # types.ts, format.ts (shared utilities)
+└── pages/product/
+    ├── show.tsx         # Main page (state orchestration)
+    └── components/      # AuctionPending/Active/Ended, BidForm, BidHistory, ProductCard, Toast
+```
+
+---
+
 ## 🧪 Testing
 
 ```bash
-# Backend (19 tests)
-./vendor/bin/sail artisan test
+# Full CI check (lint + format + types + tests)
+./vendor/bin/sail composer ci:check
 
-# Frontend (Vitest)
-./vendor/bin/sail npm run test:js
+# Individual checks
+./vendor/bin/sail artisan test              # Backend (Pest, 31 tests)
+./vendor/bin/sail npm run test:js           # Frontend (Vitest, 21 tests)
+./vendor/bin/sail composer types:check      # PHPStan
+./vendor/bin/sail npm run types:check       # TypeScript (tsc)
+./vendor/bin/sail npm run lint:check        # ESLint
+./vendor/bin/sail npm run format:check      # Prettier
+```
 
-# Static analysis
-./vendor/bin/sail bin phpstan analyse
-./vendor/bin/sail npm run lint
+### Pre-Push Hook
+
+A git pre-push hook automatically runs all CI checks before allowing a push. If any check fails, the push is aborted.
+
+```bash
+# Bypass the hook (not recommended)
+git push --no-verify
 ```
 
 ---

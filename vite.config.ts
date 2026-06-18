@@ -6,6 +6,7 @@ import react from '@vitejs/plugin-react';
 import laravel from 'laravel-vite-plugin';
 import { bunny } from 'laravel-vite-plugin/fonts';
 import { defineConfig } from 'vite';
+import { fileURLToPath, URL } from 'node:url';
 
 export default defineConfig({
     plugins: [
@@ -33,5 +34,10 @@ export default defineConfig({
         globals: true,
         environment: 'jsdom',
         setupFiles: 'resources/js/tests/setup.ts',
+    },
+    resolve: {
+        alias: {
+            '@': fileURLToPath(new URL('./resources/js', import.meta.url)),
+        },
     },
 });
